@@ -1,0 +1,26 @@
+# Node modules
+node_modules/
+examples/node_modules/
+
+# Build output
+dist/
+
+# Logs
+logs/
+*.log
+
+# Dependency locks (optional, if you want to ignore them)
+# package-lock.json
+tmp/
+.DS_Store
+.env
+.env.*
+
+# Ignore OS files
+Thumbs.db
+
+# Ignore test coverage
+coverage/
+
+# Ignore Docker artifacts
+*.local 
