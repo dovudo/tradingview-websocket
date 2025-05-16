@@ -9,9 +9,6 @@ services:
     environment:
       - TV_API_PROXY=
       - TV_API_TIMEOUT_MS=10000
-      - SUBSCRIPTIONS=[{"symbol":"BINANCE:BTCUSDT","timeframe":"1"},{"symbol":"BINANCE:ETHUSDT","timeframe":"5"}]
-      - BACKEND_ENDPOINT=
-      - BACKEND_API_KEY=
       - WEBSOCKET_PORT=8081
       - WEBSOCKET_ENABLED=true
       - METRICS_PORT=9100

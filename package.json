@@ -16,6 +16,7 @@
     "express": "^5.1.0",
     "express-ws": "^5.0.2",
     "https-proxy-agent": "^7.0.6",
+    "jszip": "^3.10.1",
     "prom-client": "^14.0.0",
     "socks-proxy-agent": "^8.0.5",
     "winston": "^3.8.2",

@@ -1,22 +1,32 @@
-FROM node:20-alpine
+# Stage 1: Build
+FROM node:20-alpine AS build
 
-# Создаем рабочую директорию
 WORKDIR /app
 
-# Копируем package.json и package-lock.json
 COPY package*.json ./
+RUN npm ci
 
-# Устанавливаем зависимости
+COPY . .
+RUN npm run build
+
+# Stage 2: Production
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
 RUN npm ci --omit=dev
 
-# Копируем скомпилированные файлы
-COPY dist/ ./dist/
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/tradingview_vendor ./tradingview_vendor
+COPY --from=build /app/README.md ./
+COPY --from=build /app/docker-compose.yml ./
+COPY --from=build /app/Dockerfile ./
+COPY --from=build /app/.gitignore ./
+COPY --from=build /app/examples ./examples
 
-# Создаем директорию для логов
 RUN mkdir -p logs
 
-# Порты
 EXPOSE 8081 9100
 
-# Запуск приложения
 CMD ["node", "dist/main.js"] 

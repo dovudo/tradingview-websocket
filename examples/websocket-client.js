@@ -1,33 +1,33 @@
 const WebSocket = require('ws');
 
-// Подключение к WebSocket серверу
+// Connect to WebSocket server
 const ws = new WebSocket('ws://localhost:8081');
 
-// Обработка открытия соединения
+// Handle connection open
 ws.on('open', function open() {
   console.log('Connected to TradingView Fetcher WebSocket API');
   
-  // Вывести список подписок
-  console.log('Запрашиваем список подписок...');
+  // Request subscription list
+  console.log('Requesting subscription list...');
   ws.send(JSON.stringify({
     action: 'list',
     requestId: 'initial-list'
   }));
   
-  // Через 3 секунды подписываемся на BINANCE:XRPUSDT
+  // After 3 seconds, subscribe to BINANCE:XRPUSDT
   setTimeout(() => {
-    console.log('Подписываемся на BINANCE:XRPUSDT...');
+    console.log('Subscribing to BINANCE:XRPUSDT...');
     ws.send(JSON.stringify({
       action: 'subscribe',
       symbol: 'BINANCE:XRPUSDT',
-      timeframe: '5', // 5 минут
+      timeframe: '5', // 5 minutes
       requestId: 'sub-xrp'
     }));
   }, 3000);
   
-  // Через 10 секунд отписываемся от BINANCE:XRPUSDT
+  // After 10 seconds, unsubscribe from BINANCE:XRPUSDT
   setTimeout(() => {
-    console.log('Отписываемся от BINANCE:XRPUSDT...');
+    console.log('Unsubscribing from BINANCE:XRPUSDT...');
     ws.send(JSON.stringify({
       action: 'unsubscribe',
       symbol: 'BINANCE:XRPUSDT',
@@ -36,9 +36,9 @@ ws.on('open', function open() {
     }));
   }, 10000);
   
-  // Через 15 секунд снова запрашиваем список подписок
+  // After 15 seconds, request updated subscription list
   setTimeout(() => {
-    console.log('Запрашиваем обновленный список подписок...');
+    console.log('Requesting updated subscription list...');
     ws.send(JSON.stringify({
       action: 'list',
       requestId: 'final-list'
@@ -46,41 +46,41 @@ ws.on('open', function open() {
   }, 15000);
 });
 
-// Счетчик полученных баров
+// Bar counter
 let barCount = 0;
 
-// Обработка входящих сообщений
+// Handle incoming messages
 ws.on('message', function incoming(data) {
   const message = JSON.parse(data);
   
   if (message.type === 'bar') {
     barCount++;
-    console.log(`Получен бар #${barCount}: ${message.bar.symbol}/${message.bar.timeframe} - цена закрытия: ${message.bar.close}`);
-    // Ограничиваем количество сообщений
+    console.log(`Received bar #${barCount}: ${message.bar.symbol}/${message.bar.timeframe} - closing price: ${message.bar.close}`);
+    // Limit number of messages
     if (barCount > 15) {
-      console.log('Получено достаточно баров, закрываем соединение');
+      console.log('Received enough bars, closing connection');
       ws.close();
     }
   } else {
-    // Для не-бар сообщений выводим полное содержимое
-    console.log('Получено сообщение:', message);
+    // For non-bar messages, print full content
+    console.log('Received message:', message);
   }
 });
 
-// Обработка ошибок
+// Handle errors
 ws.on('error', function error(err) {
-  console.error('Ошибка WebSocket:', err);
+  console.error('WebSocket error:', err);
 });
 
-// Обработка закрытия соединения
+// Handle connection close
 ws.on('close', function close() {
-  console.log('Соединение закрыто');
+  console.log('Connection closed');
   process.exit(0);
 });
 
-// Обработка выхода по Ctrl+C
+// Handle Ctrl+C
 process.on('SIGINT', () => {
-  console.log('Прерывание, закрываем соединение');
+  console.log('Interrupt, closing connection');
   ws.close();
   process.exit(0);
 }); 

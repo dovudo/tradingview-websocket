@@ -4,45 +4,9 @@ import type { Subscription } from './config';
 import { logger } from './logger';
 import { wsConnectsTotal, wsErrorsTotal, subscriptionsGauge } from './metrics';
 
-// Импорт библиотеки TradingView из нашей локальной копии
+// Import TradingView API from local vendor directory
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-let TV;
-try {
-  TV = require('../tradingview_vendor/client');
-  logger.info('TradingView loaded: %o', {
-    type: typeof TV,
-    isFunction: typeof TV === 'function',
-    hasConstructor: TV && typeof TV.constructor === 'function',
-    keys: TV ? Object.keys(TV) : []
-  });
-} catch (err) {
-  logger.error('Error loading TradingView: %s', (err as Error).message);
-  // Создаем заглушку для тестирования
-  TV = {
-    Client: function() {
-      this.loginGuest = async () => Promise.resolve(true);
-      this.Chart = function(symbol: string, options: any) {
-        return {
-          symbol,
-          options,
-          periods: [
-            {
-              time: Date.now() / 1000,
-              open: 100,
-              high: 105, 
-              low: 95,
-              close: 101,
-              volume: 100
-            }
-          ],
-          onUpdate: (cb: Function) => setTimeout(cb, 1000),
-          setMarket: () => {},
-          delete: () => {}
-        };
-      };
-    }
-  };
-}
+const TradingViewAPI = require('../tradingview_vendor/main');
 
 export interface Bar {
   symbol: string;
@@ -58,12 +22,11 @@ export interface Bar {
 export class TradingViewClient extends EventEmitter {
   private client: any;
   private connected = false;
-  private charts: Map<string, any> = new Map(); // Отслеживаем подписки для каждого символа
-  private mockIntervalId: NodeJS.Timeout | number | null = null;
+  private charts: Map<string, any> = new Map(); // Track subscriptions for each symbol
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
   private readonly maxReconnectAttempts = 10;
-  private readonly reconnectDelay = 5000; // 5 секунд базовая задержка
+  private readonly reconnectDelay = 5000; // 5 seconds base delay
 
   constructor() {
     super();
@@ -73,19 +36,15 @@ export class TradingViewClient extends EventEmitter {
     try {
       logger.info('Creating TradingView client...');
       
-      if (typeof TV.Client !== 'function') {
-        logger.error('No TradingView.Client constructor, using mock');
-        this.useMockClient();
-      } else {
-        // Используем TV.Client 
-        try {
-          this.client = new TV.Client();
-          logger.info('TradingView client created successfully');
-        } catch (err) {
-          logger.error('Error creating TradingView client: %s', (err as Error).message);
-          this.useMockClient();
-        }
-      }
+      // Create TradingView API client
+      this.client = new TradingViewAPI.Client({
+        // Use proxy if specified in config
+        proxy: config.tvApi.proxy || undefined,
+        // Set connection timeout
+        timeout_ms: config.tvApi.timeoutMs
+      });
+      
+      logger.info('TradingView client created successfully');
       
       if (!this.client) {
         throw new Error('Could not initialize TradingView client');
@@ -104,7 +63,7 @@ export class TradingViewClient extends EventEmitter {
   }
 
   private scheduleReconnect() {
-    // Предотвращаем множественные попытки переподключения
+    // Prevent multiple reconnect attempts
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
     }
@@ -116,10 +75,10 @@ export class TradingViewClient extends EventEmitter {
       return;
     }
 
-    // Экспоненциальная задержка с джиттером для предотвращения thundering herd 
+    // Exponential backoff with jitter to prevent thundering herd
     const delay = Math.min(
       this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1) * (1 + Math.random() * 0.2),
-      60000 // максимум 1 минута
+      60000 // max 1 minute
     );
 
     logger.info(`Scheduling reconnect in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
@@ -133,58 +92,7 @@ export class TradingViewClient extends EventEmitter {
     }, delay);
   }
 
-  // Мок-клиент для тестирования
-  private useMockClient() {
-    logger.warn('Using mock TradingView client');
-    this.client = {
-      Session: {
-        Chart: function() {
-          return {
-            infos: {
-              description: "Mock Market",
-              currency_id: "USD"
-            },
-            periods: [] as any[],
-            onError: function() {},
-            onSymbolLoaded: function(cb: Function) { setTimeout(cb, 100); },
-            onUpdate: function(cb: Function) { 
-              // Вызываем callback сразу и затем периодически
-              setTimeout(cb, 500);
-              
-              // Генерируем случайные данные периодически
-              return setInterval(() => {
-                const lastPrice = 100 + Math.random() * 50;
-                this.periods.unshift({
-                  time: Math.floor(Date.now() / 1000),
-                  open: lastPrice - 5,
-                  close: lastPrice,
-                  max: lastPrice + 5,
-                  min: lastPrice - 10,
-                  volume: Math.floor(Math.random() * 1000)
-                });
-                
-                // Ограничиваем размер массива
-                if (this.periods.length > 100) {
-                  this.periods.pop();
-                }
-                
-                cb();
-              }, 1000);
-            },
-            setMarket: function(symbol: string, options: any) {
-              this.infos.description = symbol;
-              this.infos.currency_id = "USD";
-              return true;
-            },
-            delete: function() {}
-          };
-        }
-      },
-      end: function() {}
-    };
-  }
-
-  // Подписка на символ/таймфрейм
+  // Subscribe to symbol/timeframe
   async subscribe(subscription: Subscription): Promise<boolean> {
     if (!this.connected || !this.client) {
       logger.error('Cannot subscribe, client not connected');
@@ -194,7 +102,7 @@ export class TradingViewClient extends EventEmitter {
     const { symbol, timeframe } = subscription;
     const key = `${symbol}_${timeframe}`;
 
-    // Если уже есть такая подписка - ничего не делаем
+    // If already subscribed, do nothing
     if (this.charts.has(key)) {
       logger.info('Already subscribed to %s/%s', symbol, timeframe);
       return true;
@@ -203,69 +111,54 @@ export class TradingViewClient extends EventEmitter {
     try {
       logger.info('Creating chart for %s/%s', symbol, timeframe);
       
-      // Проверяем API
-      if (!this.client.Session || typeof this.client.Session.Chart !== 'function') {
-        logger.error('No Chart constructor in TradingView client, using mock');
-        this.useMockClient();
-        if (!this.client.Session || typeof this.client.Session.Chart !== 'function') {
-          logger.error('Failed to initialize mock Chart');
-          return false;
-        }
-      }
-      
-      // Создаем отдельный chart для символа/таймфрейма
+      // Create separate chart for symbol/timeframe
       const chart = new this.client.Session.Chart();
       
-      // Обработка ошибок
+      // Handle errors
       chart.onError((...err: any[]) => {
         logger.error('Chart error for %s/%s: %o', symbol, timeframe, err);
         this.emit('chart_error', { symbol, timeframe, error: err });
       });
       
-      // Когда символ загружен
+      // When symbol is loaded
       chart.onSymbolLoaded(() => {
         logger.info('Symbol loaded for %s/%s: %s', symbol, timeframe, chart.infos?.description || 'Unknown');
         this.emit('symbol_loaded', { symbol, timeframe, description: chart.infos?.description });
       });
       
-      // Обработка обновлений данных
-      const updateHandler = chart.onUpdate(() => {
+      // Handle data updates
+      chart.onUpdate(() => {
         if (!chart.periods || !chart.periods[0]) return;
         
-        // Получаем последний бар
+        // Get last bar
         const lastBar = chart.periods[0];
         
         if (lastBar) {
-          // Формируем бар для отправки
+          // Prepare bar for push
           const bar: Bar = {
             symbol,
             timeframe,
             time: lastBar.time,
             open: lastBar.open,
-            high: lastBar.max,
-            low: lastBar.min,
+            high: lastBar.max || lastBar.high, // Support for different data formats
+            low: lastBar.min || lastBar.low,   // Support for different data formats
             close: lastBar.close,
             volume: lastBar.volume || 0,
           };
           
-          logger.info('Got bar: %o', bar);
+          logger.debug('Got bar: %o', bar);
           
-          // Отправляем бар слушателям
+          // Emit bar to listeners
           this.emit('bar', bar);
         }
       });
       
-      // Сохраняем intervalId для мок-клиента, если он вернулся
-      if (typeof updateHandler === 'number') {
-        this.mockIntervalId = updateHandler as number;
-      }
-      
-      // Устанавливаем рынок
+      // Set market
       chart.setMarket(symbol, {
         timeframe
       });
       
-      // Сохраняем chart для этой подписки
+      // Save chart for this subscription
       this.charts.set(key, chart);
       subscriptionsGauge.set(this.charts.size);
 
@@ -280,7 +173,7 @@ export class TradingViewClient extends EventEmitter {
     }
   }
 
-  // Отписка от символа/таймфрейма
+  // Unsubscribe from symbol/timeframe
   async unsubscribe(symbol: string, timeframe: string): Promise<boolean> {
     const key = `${symbol}_${timeframe}`;
     const chart = this.charts.get(key);
@@ -292,7 +185,7 @@ export class TradingViewClient extends EventEmitter {
 
     try {
       logger.info('Unsubscribing from TradingView: %s/%s', symbol, timeframe);
-      // Удаляем chart
+      // Delete chart
       if (typeof chart.delete === 'function') {
         chart.delete();
         logger.info('Chart.delete() called for %s/%s', symbol, timeframe);
@@ -313,7 +206,7 @@ export class TradingViewClient extends EventEmitter {
     }
   }
 
-  // Получить список активных подписок
+  // Get list of active subscriptions
   getSubscriptions(): Subscription[] {
     return Array.from(this.charts.keys()).map(key => {
       const [symbol, timeframe] = key.split('_');
@@ -321,19 +214,19 @@ export class TradingViewClient extends EventEmitter {
     });
   }
 
-  // Обновить подписки (подписаться на новые и отписаться от ненужных)
+  // Update subscriptions (subscribe to new and unsubscribe from removed)
   async updateSubscriptions(subscriptions: Subscription[]): Promise<void> {
     const currentSubs = this.getSubscriptions();
     const currentKeys = new Set(currentSubs.map(s => `${s.symbol}_${s.timeframe}`));
     const newKeys = new Set(subscriptions.map(s => `${s.symbol}_${s.timeframe}`));
     
-    // Отписаться от тех, которых нет в новом списке
+    // Unsubscribe from those not in the new list
     const toRemove = currentSubs.filter(s => !newKeys.has(`${s.symbol}_${s.timeframe}`));
     for (const sub of toRemove) {
       await this.unsubscribe(sub.symbol, sub.timeframe);
     }
     
-    // Подписаться на новые
+    // Subscribe to new ones
     const toAdd = subscriptions.filter(s => !currentKeys.has(`${s.symbol}_${s.timeframe}`));
     for (const sub of toAdd) {
       await this.subscribe(sub);
@@ -343,19 +236,13 @@ export class TradingViewClient extends EventEmitter {
   }
 
   close() {
-    // Останавливаем мок-генерацию данных
-    if (this.mockIntervalId) {
-      clearInterval(this.mockIntervalId as NodeJS.Timeout);
-      this.mockIntervalId = null;
-    }
-
-    // Отменяем попытки переподключения
+    // Cancel reconnect attempts
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
     
-    // Закрываем все подписки
+    // Close all subscriptions
     for (const [key, chart] of this.charts.entries()) {
       try {
         if (typeof chart.delete === 'function') {
@@ -369,7 +256,7 @@ export class TradingViewClient extends EventEmitter {
     this.charts.clear();
     subscriptionsGauge.set(0);
     
-    // Закрываем соединение
+    // Close connection
     if (this.client && this.connected && typeof this.client.end === 'function') {
       try {
         this.client.end();

@@ -5,23 +5,23 @@ import { barsPushedTotal, httpPushLatency } from './metrics';
 import type { Bar } from './tradingview';
 import type { WebSocketServer } from './websocket';
 
-// WebSocket сервер (опционально)
+// Optional WebSocket server
 let wsServer: WebSocketServer | null = null;
 
-// Установка WebSocket сервера
+// Set WebSocket server
 export function setWebSocketServer(server: WebSocketServer) {
   wsServer = server;
   logger.info('WebSocket server set for push service');
 }
 
-// Функция для отправки бара в API и WebSocket клиентам
+// Function to push a bar to API and WebSocket clients
 export async function pushBar(bar: Bar) {
-  // Если есть WebSocket сервер, отправляем данные через него
+  // If WebSocket server is set, broadcast bar to clients
   if (wsServer) {
     wsServer.broadcastBar(bar);
   }
 
-  // Если конфигурация backend отключена, не отправляем по HTTP
+  // If backend endpoint is not configured, do not push via HTTP
   if (!config.backend.endpoint) {
     return;
   }

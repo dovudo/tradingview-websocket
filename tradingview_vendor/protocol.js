@@ -17,6 +17,7 @@ module.exports = {
    * @returns {TWPacket[]} TradingView packets
    */
   parseWSPacket(str) {
+    str = str.toString(); // Приведение к строке для совместимости
     return str.replace(cleanerRgx, '').split(splitterRgx)
       .map((p) => {
         if (!p) return false;

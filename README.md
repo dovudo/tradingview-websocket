@@ -1,18 +1,20 @@
-# TradingView Fetcher Service
+# TradingView Fetcher
 
 A microservice for fetching real-time OHLCV data from TradingView and broadcasting it via a WebSocket API. Supports dynamic subscription management, resilience, and Prometheus metrics.
 
+**All code comments and documentation are in English.**
+
 ## Features
 
-- 🔄 **Real-time data** from TradingView
-- 📊 **WebSocket API** for dynamic symbol subscription management
-- 📈 **Broadcasts price updates** via WebSocket
-- 🔌 **HTTP API integration** for pushing data to external systems
-- 📡 **Prometheus metrics monitoring**
-- 🔍 **Configurable logging**
-- 🔄 **Automatic reconnection** on failure
-- 🛡️ **Proxy support** (optional)
-- 🐳 **Docker-ready** for easy deployment
+- Real-time data from TradingView
+- WebSocket API for dynamic symbol subscription management
+- Broadcasts price updates via WebSocket
+- HTTP API integration for pushing data to external systems
+- Prometheus metrics monitoring
+- Configurable logging
+- Automatic reconnection on failure
+- Proxy support (optional)
+- Docker-ready for easy deployment
 
 ## Installation
 
@@ -72,6 +74,22 @@ cp .env.example .env
 | `LOG_LEVEL`        | Logging level (debug, info, warn, error)     | info                                       |
 | `LOG_FILE`         | Log file path                                | ./logs/tv-fetcher.log                      |
 
+### Timeframes
+
+TradingView API uses the following timeframe formats:
+
+| Human format | TradingView API format |
+|--------------|-------------------------|
+| 1 minute     | "1"                     |
+| 5 minutes    | "5"                     |
+| 15 minutes   | "15"                    |
+| 30 minutes   | "30"                    |
+| 1 hour       | "60"                    |
+| 4 hours      | "240"                   |
+| 1 day        | "D"                     |
+| 1 week       | "W"                     |
+| 1 month      | "M"                     |
+
 ## WebSocket API
 
 The service provides a WebSocket API for managing subscriptions and receiving real-time data.
@@ -93,14 +111,6 @@ The service provides a WebSocket API for managing subscriptions and receiving re
 }
 ```
 
-| Field      | Type    | Description                                                        |
-|------------|---------|--------------------------------------------------------------------|
-| action     | string  | Action type: `subscribe`, `unsubscribe`, `list`, `subscribe_many`, `unsubscribe_many` |
-| symbol     | string  | TradingView symbol (for `subscribe`/`unsubscribe`)                 |
-| timeframe  | string  | Timeframe (for `subscribe`/`unsubscribe`)                          |
-| pairs      | array   | Array of `{symbol, timeframe}` for bulk operations                 |
-| requestId  | string  | Optional request ID for response matching                          |
-
 #### Responses (server → client)
 
 ```json
@@ -116,18 +126,6 @@ The service provides a WebSocket API for managing subscriptions and receiving re
   "results": [ /* ... */ ] // for bulk operations
 }
 ```
-
-| Field         | Type    | Description                                                      |
-|---------------|---------|------------------------------------------------------------------|
-| type          | string  | Response type: `bar`, `subscribe`, `unsubscribe`, `list`, `error`, `info`, `subscribe_many`, `unsubscribe_many` |
-| success       | bool    | Operation success                                                |
-| message       | string  | Result message                                                   |
-| requestId     | string  | Corresponding request ID                                         |
-| symbol        | string  | Symbol (for subscribe/unsubscribe)                               |
-| timeframe     | string  | Timeframe (for subscribe/unsubscribe)                            |
-| subscriptions | array   | List of active subscriptions (for list and bulk)                 |
-| bar           | object  | Bar data (for type: bar)                                         |
-| results       | array   | Array of results for bulk operations                             |
 
 #### Example Requests
 
@@ -261,22 +259,6 @@ The service exports the following metrics on `/metrics`:
 - `tv_http_push_latency_seconds` - HTTP push latency
 - `tv_active_subscriptions` - Number of active subscriptions
 
-## Timeframes
-
-TradingView API uses the following timeframe formats:
-
-| Human format | TradingView API format |
-|--------------|-------------------------|
-| 1 minute     | "1"                     |
-| 5 minutes    | "5"                     |
-| 15 minutes   | "15"                    |
-| 30 minutes   | "30"                    |
-| 1 hour        | "60"                    |
-| 4 hours       | "240"                   |
-| 1 day         | "D"                     |
-| 1 week        | "W"                     |
-| 1 month       | "M"                     |
-
 ## Development
 
 ```bash
@@ -317,6 +299,3 @@ MIT
 - For ESM/TypeScript imports inside source files, use `.js` extensions.
 - For dev mode, use `ts-node --esm --experimental-specifier-resolution=node`.
 - For production, run only from `dist`.
-
-## TradingView API Documentation
-- [https://github.com/Mathieu2301/TradingView-API](https://github.com/Mathieu2301/TradingView-API) 
