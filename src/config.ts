@@ -28,6 +28,8 @@ export interface Config {
     port: number;
     enabled: boolean;
   };
+  debugPrices: boolean;
+  pricesLogFile: string;
 }
 
 function parseSubscriptions(): Subscription[] {
@@ -80,4 +82,6 @@ export const config: Config = {
     port: Number(process.env.WEBSOCKET_PORT) || 8081,
     enabled: process.env.WEBSOCKET_ENABLED !== 'false',
   },
+  debugPrices: process.env.DEBUG_PRICES === 'true',
+  pricesLogFile: process.env.PRICES_LOG_FILE || './logs/prices.log',
 }; 

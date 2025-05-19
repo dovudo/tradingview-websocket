@@ -5,6 +5,7 @@ import { config } from './config';
 import { logger } from './logger';
 import { type Subscription } from './config';
 import { type Bar } from './tradingview';
+import { getTradingViewClient } from './push';
 
 // WebSocket message types
 export enum MessageType {
@@ -105,8 +106,8 @@ export class WebSocketServer extends EventEmitter {
     });
 
     // Handle disconnection
-    ws.on('close', () => {
-      logger.info('WebSocket client disconnected');
+    ws.on('close', async () => {
+      logger.info('[DIAG] ws.on(close) triggered. activeSubscriptions: %d', this.activeSubscriptions.size);
       this.clients.delete(ws);
       // Automatic unsubscription from all tickers subscribed to by this client
       const subs = this.clientSubscriptions.get(ws);
@@ -119,12 +120,23 @@ export class WebSocketServer extends EventEmitter {
               this.subscriptionClients.delete(key);
               const [symbol, timeframe] = key.split('_');
               this.activeSubscriptions.delete(key);
+              logger.info('[DIAG] activeSubscriptions deleted key: %s. Now: %o', key, Array.from(this.activeSubscriptions.keys()));
               this.emit('unsubscribe', { symbol, timeframe });
               logger.info('Auto-unsubscribed from %s/%s (last client disconnected)', symbol, timeframe);
             }
           }
         }
         this.clientSubscriptions.delete(ws);
+        logger.info('[DIAG] clients.size after delete: %d', this.clients.size);
+        if (this.clients.size === 0) {
+          logger.info('[DIAG] No WebSocket clients left, forcibly clearing all activeSubscriptions and resetting TradingView');
+          this.activeSubscriptions.clear();
+          const tvClient = getTradingViewClient && getTradingViewClient();
+          if (tvClient && typeof tvClient.resetAllSubscriptions === 'function') {
+            await tvClient.resetAllSubscriptions();
+            logger.info('[DIAG] resetAllSubscriptions() forcibly called due to no clients');
+          }
+        }
       }
     });
 
@@ -293,15 +305,18 @@ export class WebSocketServer extends EventEmitter {
     }
     const results = data.pairs.map(pair => {
       if (!pair.symbol || !pair.timeframe) {
+        logger.warn('[DIAG] Skipping invalid pair in subscribe_many: %o', pair);
         return { ...pair, success: false, message: 'symbol and timeframe required' };
       }
       const key = `${pair.symbol}_${pair.timeframe}`;
       if (this.activeSubscriptions.has(key)) {
+        logger.info('[DIAG] Skipping subscribe_many for %s/%s: already subscribed', pair.symbol, pair.timeframe);
         return { ...pair, success: true, message: 'Already subscribed' };
       }
       const subscription: Subscription = { symbol: pair.symbol, timeframe: pair.timeframe };
       this.activeSubscriptions.set(key, subscription);
       this.emit('subscribe', subscription);
+      logger.info('[DIAG] subscribe_many triggers new subscribe for %s/%s', pair.symbol, pair.timeframe);
       return { ...pair, success: true, message: 'Subscription created' };
     });
     this.sendMessage(ws, {

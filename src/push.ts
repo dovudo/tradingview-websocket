@@ -4,14 +4,27 @@ import { logger } from './logger';
 import { barsPushedTotal, httpPushLatency } from './metrics';
 import type { Bar } from './tradingview';
 import type { WebSocketServer } from './websocket';
+import { TradingViewClient } from './tradingview';
 
 // Optional WebSocket server
 let wsServer: WebSocketServer | null = null;
+
+// TradingViewClient singleton
+let tvClient: TradingViewClient | null = null;
 
 // Set WebSocket server
 export function setWebSocketServer(server: WebSocketServer) {
   wsServer = server;
   logger.info('WebSocket server set for push service');
+}
+
+export function setTradingViewClient(client: TradingViewClient) {
+  tvClient = client;
+  logger.info('TradingView client set for push service');
+}
+
+export function getTradingViewClient(): TradingViewClient | null {
+  return tvClient;
 }
 
 // Function to push a bar to API and WebSocket clients

@@ -2,7 +2,7 @@ import { config } from './config';
 import { logger } from './logger';
 import { startMetricsServer } from './metrics';
 import { TradingViewClient } from './tradingview';
-import { pushBar, setWebSocketServer } from './push';
+import { pushBar, setWebSocketServer, setTradingViewClient } from './push';
 import { WebSocketServer } from './websocket';
 
 logger.info('tv-fetcher starting...');
@@ -40,6 +40,7 @@ if (config.websocket.enabled) {
 async function start() {
   // Create TradingView client
   tvClient = new TradingViewClient();
+  setTradingViewClient(tvClient);
   
   // Handle errors
   tvClient.on('error', (err) => {

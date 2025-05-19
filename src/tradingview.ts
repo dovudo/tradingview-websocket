@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { config } from './config';
 import type { Subscription } from './config';
-import { logger } from './logger';
+import { logger, priceLogger } from './logger';
 import { wsConnectsTotal, wsErrorsTotal, subscriptionsGauge } from './metrics';
 
 // Import TradingView API from local vendor directory
@@ -54,6 +54,8 @@ export class TradingViewClient extends EventEmitter {
       this.reconnectAttempts = 0;
       wsConnectsTotal.inc();
       this.emit('connect');
+      logger.info('[DIAG] TradingView connected. Will restore subscriptions if needed.');
+      logger.info('[DIAG] Subscriptions to restore: %o', config.subscriptions);
     } catch (err) {
       logger.error('Failed to connect TradingView WS: %s', (err as Error).message);
       wsErrorsTotal.inc();
@@ -81,10 +83,10 @@ export class TradingViewClient extends EventEmitter {
       60000 // max 1 minute
     );
 
-    logger.info(`Scheduling reconnect in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+    logger.info(`[DIAG] Scheduling reconnect in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
 
     this.reconnectTimeout = setTimeout(() => {
-      logger.info('Reconnecting TradingView...');
+      logger.info('[DIAG] Reconnecting TradingView...');
       this.connect().catch(err => {
         logger.error('Reconnect failed:', err);
         this.scheduleReconnect();
@@ -93,7 +95,8 @@ export class TradingViewClient extends EventEmitter {
   }
 
   // Subscribe to symbol/timeframe
-  async subscribe(subscription: Subscription): Promise<boolean> {
+  async subscribe(subscription: Subscription, reason: string = 'explicit'): Promise<boolean> {
+    logger.info(`[DIAG] subscribe() called for %s/%s (%s). Current charts: %o`, subscription.symbol, subscription.timeframe, reason, Array.from(this.charts.keys()));
     if (!this.connected || !this.client) {
       logger.error('Cannot subscribe, client not connected');
       throw new Error('TradingView client not connected');
@@ -104,12 +107,12 @@ export class TradingViewClient extends EventEmitter {
 
     // If already subscribed, do nothing
     if (this.charts.has(key)) {
-      logger.info('Already subscribed to %s/%s', symbol, timeframe);
+      logger.info(`[DIAG] Already subscribed to %s/%s (%s). Charts: %o`, symbol, timeframe, reason, Array.from(this.charts.keys()));
       return true;
     }
 
     try {
-      logger.info('Creating chart for %s/%s', symbol, timeframe);
+      logger.info(`[DIAG] Subscribing to %s/%s (%s)`, symbol, timeframe, reason);
       
       // Create separate chart for symbol/timeframe
       const chart = new this.client.Session.Chart();
@@ -118,6 +121,7 @@ export class TradingViewClient extends EventEmitter {
       chart.onError((...err: any[]) => {
         logger.error('Chart error for %s/%s: %o', symbol, timeframe, err);
         this.emit('chart_error', { symbol, timeframe, error: err });
+        logger.error(`[DIAG] Chart error for %s/%s after %s: %o`, symbol, timeframe, reason, err);
       });
       
       // When symbol is loaded
@@ -148,6 +152,14 @@ export class TradingViewClient extends EventEmitter {
           
           logger.debug('Got bar: %o', bar);
           
+          if (config.debugPrices) {
+            priceLogger.info(
+              '[PRICE] %s/%s %s O:%.5f H:%.5f L:%.5f C:%.5f V:%.2f',
+              bar.symbol, bar.timeframe, new Date(bar.time * 1000).toISOString(),
+              bar.open, bar.high, bar.low, bar.close, bar.volume
+            );
+          }
+          
           // Emit bar to listeners
           this.emit('bar', bar);
         }
@@ -160,15 +172,16 @@ export class TradingViewClient extends EventEmitter {
       
       // Save chart for this subscription
       this.charts.set(key, chart);
+      logger.info('[DIAG] charts after subscribe: %o', Array.from(this.charts.keys()));
       subscriptionsGauge.set(this.charts.size);
-
-      logger.info('Subscribed to %s/%s', symbol, timeframe);
+      logger.info(`[DIAG] Subscribed to %s/%s (%s). Charts now: %o`, symbol, timeframe, reason, Array.from(this.charts.keys()));
       this.emit('subscribed', subscription);
       
       return true;
     } catch (err) {
       logger.error('Failed to subscribe to %s/%s: %s', symbol, timeframe, (err as Error).message);
       this.emit('subscription_error', { subscription, error: err });
+      logger.error(`[DIAG] Failed to subscribe to %s/%s after %s: %s`, symbol, timeframe, reason, (err as Error).message);
       return false;
     }
   }
@@ -176,6 +189,7 @@ export class TradingViewClient extends EventEmitter {
   // Unsubscribe from symbol/timeframe
   async unsubscribe(symbol: string, timeframe: string): Promise<boolean> {
     const key = `${symbol}_${timeframe}`;
+    logger.info(`[DIAG] unsubscribe() called for %s/%s. Current charts: %o`, symbol, timeframe, Array.from(this.charts.keys()));
     const chart = this.charts.get(key);
 
     if (!chart) {
@@ -185,7 +199,6 @@ export class TradingViewClient extends EventEmitter {
 
     try {
       logger.info('Unsubscribing from TradingView: %s/%s', symbol, timeframe);
-      // Delete chart
       if (typeof chart.delete === 'function') {
         chart.delete();
         logger.info('Chart.delete() called for %s/%s', symbol, timeframe);
@@ -193,8 +206,9 @@ export class TradingViewClient extends EventEmitter {
         logger.warn('Chart.delete() not a function for %s/%s', symbol, timeframe);
       }
       this.charts.delete(key);
+      logger.info('[DIAG] charts after unsubscribe: %o', Array.from(this.charts.keys()));
       subscriptionsGauge.set(this.charts.size);
-      logger.info('Unsubscribed from %s/%s, %d subscriptions remain', symbol, timeframe, this.charts.size);
+      logger.info('Unsubscribed from %s/%s, %d subscriptions remain. Charts now: %o', symbol, timeframe, this.charts.size, Array.from(this.charts.keys()));
       if (this.charts.size === 0) {
         logger.info('All TradingView subscriptions removed, TradingView client is now idle');
       }
@@ -215,7 +229,7 @@ export class TradingViewClient extends EventEmitter {
   }
 
   // Update subscriptions (subscribe to new and unsubscribe from removed)
-  async updateSubscriptions(subscriptions: Subscription[]): Promise<void> {
+  async updateSubscriptions(subscriptions: Subscription[], reason: string = 'explicit'): Promise<void> {
     const currentSubs = this.getSubscriptions();
     const currentKeys = new Set(currentSubs.map(s => `${s.symbol}_${s.timeframe}`));
     const newKeys = new Set(subscriptions.map(s => `${s.symbol}_${s.timeframe}`));
@@ -228,11 +242,16 @@ export class TradingViewClient extends EventEmitter {
     
     // Subscribe to new ones
     const toAdd = subscriptions.filter(s => !currentKeys.has(`${s.symbol}_${s.timeframe}`));
+    let restored = 0;
     for (const sub of toAdd) {
-      await this.subscribe(sub);
+      const ok = await this.subscribe(sub, reason);
+      if (ok) restored++;
     }
     
-    logger.info('Subscriptions updated: removed %d, added %d', toRemove.length, toAdd.length);
+    logger.info(`[DIAG] updateSubscriptions(%s): removed %d, added %d, restored %d`, reason, toRemove.length, toAdd.length, restored);
+    if (reason === 'reconnect' && restored === 0) {
+      logger.error('[DIAG] No subscriptions restored after reconnect!');
+    }
   }
 
   close() {
@@ -268,5 +287,28 @@ export class TradingViewClient extends EventEmitter {
     this.connected = false;
     this.emit('disconnect');
     logger.info('TradingView client closed');
+  }
+
+  /**
+   * Полная очистка всех подписок TradingView. Удаляет все charts и завершает все сессии.
+   */
+  public async resetAllSubscriptions(): Promise<void> {
+    logger.info('[DIAG] resetAllSubscriptions() called. Current charts: %o', Array.from(this.charts.keys()));
+    for (const [key, chart] of this.charts.entries()) {
+      try {
+        if (typeof chart.delete === 'function') {
+          chart.delete();
+          logger.info('[DIAG] Chart.delete() called for %s', key);
+        } else {
+          logger.warn('[DIAG] Chart.delete() not a function for %s', key);
+        }
+      } catch (err) {
+        logger.error('[DIAG] Error deleting chart %s: %s', key, (err as Error).message);
+      }
+    }
+    logger.info('[DIAG] charts before clear: %o', Array.from(this.charts.keys()));
+    this.charts.clear();
+    subscriptionsGauge.set(0);
+    logger.info('[DIAG] All TradingView subscriptions fully reset. Charts now: %o', Array.from(this.charts.keys()));
   }
 } 

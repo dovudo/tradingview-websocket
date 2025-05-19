@@ -15,6 +15,7 @@ A microservice for fetching real-time OHLCV data from TradingView and broadcasti
 - Automatic reconnection on failure
 - Proxy support (optional)
 - Docker-ready for easy deployment
+- **Detailed price logging for diagnostics (see below)**
 
 ## Installation
 
@@ -61,18 +62,32 @@ cp .env.example .env
 
 ### Configuration Parameters
 
-| Variable           | Description                                 | Default                                    |
-|--------------------|---------------------------------------------|--------------------------------------------|
-| `TV_API_PROXY`     | Proxy for TradingView API (optional)         | (empty)                                    |
-| `TV_API_TIMEOUT_MS`| Timeout for TradingView API requests (ms)    | 10000                                      |
-| `SUBSCRIPTIONS`    | JSON array of initial subscriptions          | `[{"symbol":"BINANCE:BTCUSDT","timeframe":"1"}]` |
-| `BACKEND_ENDPOINT` | HTTP endpoint for pushing data               | (empty)                                    |
-| `BACKEND_API_KEY`  | API key for pushing data                     | (empty)                                    |
-| `WEBSOCKET_PORT`   | WebSocket server port                        | 8081                                       |
-| `WEBSOCKET_ENABLED`| Enable WebSocket API                         | true                                       |
-| `METRICS_PORT`     | Prometheus metrics port                      | 9100                                       |
-| `LOG_LEVEL`        | Logging level (debug, info, warn, error)     | info                                       |
-| `LOG_FILE`         | Log file path                                | ./logs/tv-fetcher.log                      |
+| Variable             | Description                                                      | Default                |
+|----------------------|------------------------------------------------------------------|------------------------|
+| `TV_API_PROXY`       | Proxy for TradingView API (optional)                              | (empty)                |
+| `TV_API_TIMEOUT_MS`  | Timeout for TradingView API requests (ms)                         | 10000                  |
+| `SUBSCRIPTIONS`      | JSON array of initial subscriptions                               | `[{"symbol":"BINANCE:BTCUSDT","timeframe":"1"}]` |
+| `BACKEND_ENDPOINT`   | HTTP endpoint for pushing data                                    | (empty)                |
+| `BACKEND_API_KEY`    | API key for pushing data                                          | (empty)                |
+| `WEBSOCKET_PORT`     | WebSocket server port                                             | 8081                   |
+| `WEBSOCKET_ENABLED`  | Enable WebSocket API                                              | true                   |
+| `METRICS_PORT`       | Prometheus metrics port                                           | 9100                   |
+| `LOG_LEVEL`          | Logging level (debug, info, warn, error)                         | info                   |
+| `LOG_FILE`           | Log file path                                                    | ./logs/tv-fetcher.log  |
+| `DEBUG_PRICES`       | Enable detailed price logging (true/false)                       | false                  |
+| `PRICES_LOG_FILE`    | File to log all received price bars if DEBUG_PRICES is true       | ./logs/prices.log      |
+
+#### Detailed Price Logging
+
+If you set `DEBUG_PRICES=true` in your `.env`, every price bar received from TradingView will be logged in detail to the file specified by `PRICES_LOG_FILE` (default: `./logs/prices.log`).
+
+Each log entry will include the symbol, timeframe, timestamp, open, high, low, close, and volume, e.g.:
+
+```
+2024-05-16T14:00:00.000Z [PRICE] BINANCE:BTCUSDT/1 2024-05-16T14:00:00.000Z O:65000.00 H:65100.00 L:64900.00 C:65050.00 V:12.34
+```
+
+This is useful for diagnostics and for verifying exactly what data is being received from TradingView, especially if you suspect issues with data delivery or backend integration.
 
 ### Timeframes
 

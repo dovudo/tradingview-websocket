@@ -29,4 +29,23 @@ export const logger = winston.createLogger({
     winston.format.json()
   ),
   transports,
-}); 
+});
+
+let priceLogger = logger;
+if (config.debugPrices) {
+  priceLogger = winston.createLogger({
+    level: 'info',
+    format: winston.format.combine(
+      winston.format.timestamp(),
+      winston.format.printf(({ timestamp, message }) => `${timestamp} ${message}`)
+    ),
+    transports: [
+      new winston.transports.File({
+        filename: config.pricesLogFile,
+        maxsize: 5 * 1024 * 1024,
+        maxFiles: 5,
+      })
+    ]
+  });
+}
+export { priceLogger }; 
