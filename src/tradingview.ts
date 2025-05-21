@@ -311,4 +311,50 @@ export class TradingViewClient extends EventEmitter {
     subscriptionsGauge.set(0);
     logger.info('[DIAG] All TradingView subscriptions fully reset. Charts now: %o', Array.from(this.charts.keys()));
   }
+
+  /**
+   * Full reconnection with TradingView - disconnects, reconnects, and restores all subscriptions
+   * This is a more aggressive reset than just resetAllSubscriptions() and is used for severe issues
+   */
+  public async fullReconnect(): Promise<boolean> {
+    logger.warn('[DIAG] fullReconnect() called - performing complete TradingView reconnection');
+    
+    try {
+      // Save current subscriptions
+      const currentSubscriptions = this.getSubscriptions();
+      const subscriptionCount = currentSubscriptions.length;
+      
+      if (subscriptionCount > 0) {
+        logger.info('[DIAG] fullReconnect() - saving %d current subscriptions before reconnect', subscriptionCount);
+      }
+      
+      // Close current connection completely
+      this.close();
+      
+      // Wait a moment
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Connect again
+      await this.connect();
+      
+      // If there were subscriptions, restore them
+      if (subscriptionCount > 0) {
+        logger.info('[DIAG] fullReconnect() - restoring %d subscriptions after reconnect', subscriptionCount);
+        await this.updateSubscriptions(currentSubscriptions, 'full_reconnect');
+      }
+      
+      logger.info('[DIAG] fullReconnect() completed successfully');
+      return true;
+    } catch (err) {
+      logger.error('[DIAG] fullReconnect() failed: %s', (err as Error).message);
+      return false;
+    }
+  }
+
+  /**
+   * Check if the client is connected to TradingView
+   */
+  public isConnected(): boolean {
+    return this.connected;
+  }
 } 

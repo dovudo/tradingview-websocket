@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { type HealthMonitorConfig } from './health';
 
 dotenv.config();
 
@@ -30,7 +31,19 @@ export interface Config {
   };
   debugPrices: boolean;
   pricesLogFile: string;
+  health: HealthMonitorConfig;
 }
+
+// Default configuration values for health monitoring
+const DEFAULT_HEALTH_CONFIG = {
+  checkIntervalMs: 60000, // Check every minute
+  staleThresholdMultiplier: 3, // Consider stale after 3x the expected interval
+  autoRecoveryEnabled: true, // Try to recover automatically
+  maxRecoveryAttempts: 3, // Max 3 recovery attempts per subscription
+  fullReconnectThreshold: 3, // Number of stale subscriptions that triggers a full reconnect
+  fullReconnectCooldownMs: 600000, // 10 minutes between full reconnects
+  apiPort: 8082, // Health API port
+};
 
 function parseSubscriptions(): Subscription[] {
   const raw = process.env.SUBSCRIPTIONS;
@@ -61,6 +74,19 @@ function normalizeTimeframe(sub: Subscription): Subscription {
   return { ...sub, timeframe };
 }
 
+// Parse health monitor config from environment variables
+export function getHealthMonitorConfig(): HealthMonitorConfig {
+  return {
+    checkIntervalMs: parseInt(process.env.HEALTH_CHECK_INTERVAL_MS || '') || DEFAULT_HEALTH_CONFIG.checkIntervalMs,
+    staleThresholdMultiplier: parseFloat(process.env.HEALTH_STALE_THRESHOLD_MULTIPLIER || '') || DEFAULT_HEALTH_CONFIG.staleThresholdMultiplier,
+    autoRecoveryEnabled: process.env.HEALTH_AUTO_RECOVERY_ENABLED !== 'false',
+    maxRecoveryAttempts: parseInt(process.env.HEALTH_MAX_RECOVERY_ATTEMPTS || '') || DEFAULT_HEALTH_CONFIG.maxRecoveryAttempts,
+    fullReconnectThreshold: parseInt(process.env.HEALTH_FULL_RECONNECT_THRESHOLD || '') || DEFAULT_HEALTH_CONFIG.fullReconnectThreshold,
+    fullReconnectCooldownMs: parseInt(process.env.HEALTH_FULL_RECONNECT_COOLDOWN_MS || '') || DEFAULT_HEALTH_CONFIG.fullReconnectCooldownMs,
+    apiPort: parseInt(process.env.HEALTH_API_PORT || '') || DEFAULT_HEALTH_CONFIG.apiPort,
+  };
+}
+
 export const config: Config = {
   tvApi: {
     proxy: process.env.TV_API_PROXY || null,
@@ -84,4 +110,5 @@ export const config: Config = {
   },
   debugPrices: process.env.DEBUG_PRICES === 'true',
   pricesLogFile: process.env.PRICES_LOG_FILE || './logs/prices.log',
+  health: getHealthMonitorConfig(),
 }; 

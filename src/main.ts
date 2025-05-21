@@ -4,6 +4,8 @@ import { startMetricsServer } from './metrics';
 import { TradingViewClient } from './tradingview';
 import { pushBar, setWebSocketServer, setTradingViewClient } from './push';
 import { WebSocketServer } from './websocket';
+import { TradingViewHealthMonitor } from './health';
+import { HealthApiServer } from './health-api';
 
 logger.info('tv-fetcher starting...');
 logger.info('Config: %o', config);
@@ -14,6 +16,12 @@ startMetricsServer(metricsPort);
 
 // Create TradingView client
 let tvClient: TradingViewClient;
+
+// Health monitor instance
+let healthMonitor: TradingViewHealthMonitor;
+
+// Health API server
+let healthApiServer: HealthApiServer;
 
 // Create WebSocket server if enabled
 let wsServer: WebSocketServer | null = null;
@@ -41,6 +49,26 @@ async function start() {
   // Create TradingView client
   tvClient = new TradingViewClient();
   setTradingViewClient(tvClient);
+  
+  // Create health monitor
+  healthMonitor = new TradingViewHealthMonitor(tvClient, config.health);
+  
+  // Create health API server
+  healthApiServer = new HealthApiServer(config.health.apiPort);
+  healthApiServer.setTradingViewClient(tvClient);
+  healthApiServer.setHealthMonitor(healthMonitor);
+  
+  // Handle health monitor events
+  healthMonitor.on('stale_subscriptions', ({ total, stale, recovered }) => {
+    logger.warn('Health monitor detected %d/%d stale subscriptions, recovered %d', stale, total, recovered);
+  });
+  
+  healthMonitor.on('max_recovery_attempts', (subscription) => {
+    logger.error(
+      'Health monitor reached max recovery attempts for %s/%s, manual intervention may be needed',
+      subscription.symbol, subscription.timeframe
+    );
+  });
   
   // Handle errors
   tvClient.on('error', (err) => {
@@ -80,6 +108,8 @@ start().catch((err) => {
 // Handle termination signals
 process.on('SIGINT', () => {
   logger.info('SIGINT received, shutting down...');
+  if (healthApiServer) healthApiServer.stop();
+  if (healthMonitor) healthMonitor.stop();
   if (wsServer) wsServer.close();
   if (tvClient) tvClient.close();
   process.exit(0);
@@ -87,6 +117,8 @@ process.on('SIGINT', () => {
 
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down...');
+  if (healthApiServer) healthApiServer.stop();
+  if (healthMonitor) healthMonitor.stop();
   if (wsServer) wsServer.close();
   if (tvClient) tvClient.close();
   process.exit(0);

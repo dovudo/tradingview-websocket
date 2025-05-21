@@ -76,6 +76,12 @@ cp .env.example .env
 | `LOG_FILE`           | Log file path                                                    | ./logs/tv-fetcher.log  |
 | `DEBUG_PRICES`       | Enable detailed price logging (true/false)                       | false                  |
 | `PRICES_LOG_FILE`    | File to log all received price bars if DEBUG_PRICES is true       | ./logs/prices.log      |
+| `HEALTH_CHECK_INTERVAL_MS` | How often to check for stale subscriptions (ms)            | 60000                  |
+| `HEALTH_STALE_THRESHOLD_MULTIPLIER` | Multiplier for stale detection (timeframe × multiplier) | 3                |
+| `HEALTH_AUTO_RECOVERY_ENABLED` | Enable automatic recovery of stale subscriptions       | true                   |
+| `HEALTH_MAX_RECOVERY_ATTEMPTS` | Maximum recovery attempts per subscription             | 3                      |
+| `HEALTH_FULL_RECONNECT_THRESHOLD` | Stale subscriptions count to trigger full reconnect | 3                      |
+| `HEALTH_FULL_RECONNECT_COOLDOWN_MS` | Cooldown between full reconnects (ms)             | 600000                 |
 
 #### Detailed Price Logging
 
@@ -104,6 +110,61 @@ TradingView API uses the following timeframe formats:
 | 1 day        | "D"                     |
 | 1 week       | "W"                     |
 | 1 month      | "M"                     |
+
+## Health Monitoring System
+
+This service includes a comprehensive health monitoring system for TradingView data flow, ensuring reliable data delivery under all conditions.
+
+### How It Works
+
+1. **Data Flow Monitoring**: The system tracks the timestamp of the last bar received for each subscription.
+2. **Stale Detection**: A subscription is considered "stale" if no data has been received for longer than expected (timeframe duration × multiplier).
+3. **Auto-Recovery**: When stale subscriptions are detected, the system automatically attempts recovery through targeted resubscription.
+4. **Progressive Recovery**: Multiple recovery strategies are employed based on the severity of the issue:
+   - **Individual Recovery**: First attempts to unsubscribe and resubscribe to the affected symbol/timeframe.
+   - **Full Reconnection**: If multiple subscriptions become stale, performs a complete TradingView reconnection.
+
+### Health Monitoring Configuration
+
+The health monitoring system is configurable through the following environment variables:
+
+- `HEALTH_CHECK_INTERVAL_MS`: How often to check for stale subscriptions (default: 60000 ms)
+- `HEALTH_STALE_THRESHOLD_MULTIPLIER`: How many timeframe intervals to wait before considering a subscription stale (default: 3)
+- `HEALTH_AUTO_RECOVERY_ENABLED`: Enable/disable automatic recovery attempts (default: true)
+- `HEALTH_MAX_RECOVERY_ATTEMPTS`: Maximum recovery attempts per subscription before giving up (default: 3)
+- `HEALTH_FULL_RECONNECT_THRESHOLD`: Number of stale subscriptions that triggers a full reconnect (default: 3)
+- `HEALTH_FULL_RECONNECT_COOLDOWN_MS`: Minimum time between full reconnects (default: 600000 ms)
+
+### Health Monitoring Logs
+
+The health monitoring system logs detailed information about its operation with the `[HEALTH]` prefix:
+
+```
+[HEALTH] Stale subscription detected for BINANCE:BTCUSDT/1 - no data for 3m 45s (threshold: 180s)
+[HEALTH] Attempting recovery for BINANCE:BTCUSDT/1 (attempt 1/3)
+[HEALTH] Successfully resubscribed to BINANCE:BTCUSDT/1
+```
+
+For severe issues, more aggressive recovery actions are logged:
+
+```
+[HEALTH] 4 stale subscriptions exceeds threshold (3), performing full reconnect
+[HEALTH] Performing full TradingView reconnect due to multiple stale subscriptions
+[HEALTH] Full TradingView reconnect successful
+```
+
+### Health Monitoring Metrics
+
+The following Prometheus metrics are exposed for monitoring the health of TradingView data flow:
+
+- `stale_subscriptions`: Gauge of currently stale subscriptions
+- `recovery_attempts_total`: Counter of recovery attempts
+- `successful_recoveries_total`: Counter of successful recovery attempts
+- `failed_recoveries_total`: Counter of failed recovery attempts
+- `full_reconnects_total`: Counter of full TradingView reconnections
+- `last_data_received_seconds`: Gauge of seconds since last data per subscription (labeled by symbol and timeframe)
+
+These metrics can be used to set up alerts for persistent data flow issues.
 
 ## WebSocket API
 
@@ -231,86 +292,3 @@ The service provides a WebSocket API for managing subscriptions and receiving re
   "requestId": "sub-err-1"
 }
 ```
-- **Bar (tick):**
-```json
-{
-  "type": "bar",
-  "bar": {
-    "symbol": "BINANCE:BTCUSDT",
-    "timeframe": "1",
-    "time": 1747222140,
-    "open": 103905.5,
-    "high": 103905.51,
-    "low": 103905.5,
-    "close": 103905.51,
-    "volume": 0.14
-  }
-}
-```
-
-### Backend Integration
-
-To push data to a backend, the bar structure is:
-
-```json
-{
-  "symbol": "BTCUSDT",
-  "time": 1684108800,
-  "open": 44000.00,
-  "high": 44500.00,
-  "low": 43800.00,
-  "close": 44250.00,
-  "volume": 123.45
-}
-```
-
-## Prometheus Metrics
-
-The service exports the following metrics on `/metrics`:
-
-- `tv_ws_connects_total` - Number of TradingView connections
-- `tv_ws_errors_total` - Number of WebSocket errors
-- `tv_bars_pushed_total` - Number of pushed bars
-- `tv_http_push_latency_seconds` - HTTP push latency
-- `tv_active_subscriptions` - Number of active subscriptions
-
-## Development
-
-```bash
-# Run in development mode
-npm run dev
-
-# Build
-npm run build
-
-# Tests (if any)
-npm test
-```
-
-## License
-
-MIT
-
-## Notes
-
-- This service uses an unofficial TradingView API library. Use at your own risk.
-- For production, it's recommended to use a Docker container with a configured healthcheck.
-- All API requests are logged, check LOG_LEVEL settings to reduce message count.
-
-## Example backend request
-```json
-{
-  "symbol": "BTCUSDT",
-  "time": 1684108800,
-  "open": 44000.00,
-  "high": 44500.00,
-  "low": 43800.00,
-  "close": 44250.00,
-  "volume": 123.45
-}
-```
-
-## Features
-- For ESM/TypeScript imports inside source files, use `.js` extensions.
-- For dev mode, use `ts-node --esm --experimental-specifier-resolution=node`.
-- For production, run only from `dist`.
