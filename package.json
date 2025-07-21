@@ -6,7 +6,7 @@
     "start": "node dist/main.js",
     "dev": "ts-node src/main.ts",
     "test": "jest",
-    "build": "tsc --project tsconfig.json --skipLibCheck",
+    "build": "npx tsc --project tsconfig.json --skipLibCheck",
     "test:ws": "node examples/websocket-client.js"
   },
   "dependencies": {

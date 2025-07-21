@@ -24,3 +24,4 @@ coverage/
 
 # Ignore Docker artifacts
 *.local 
+package-lock.json
